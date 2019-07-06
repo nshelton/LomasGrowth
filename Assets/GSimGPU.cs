@@ -9,7 +9,6 @@ public class GSimGPU
     [StructLayout(LayoutKind.Sequential)]
     public struct GParticleGPU
     {
-        public int index;
         public int link0;
         public int link1;
         public int link2;
@@ -27,7 +26,7 @@ public class GSimGPU
         public Vector3 normal;
     }
 
-    string[] m_kernelNames = new string[] 
+    string[] m_kernelNames = new string[]
     {
         "GenerateMesh",
         "Tick",
@@ -40,15 +39,20 @@ public class GSimGPU
         "Integrate"
     };
 
-    private const int SIZE_PARTICLE = 11 * sizeof(int) + 11 * sizeof(float);
+    private const int SIZE_PARTICLE = 10 * sizeof(int) + 11 * sizeof(float);
     private const int SIZE_TRIANGLE = 18 * sizeof(float);
     private const int WARP_SIZE = 64;
+    private const int MAX_PARTICLES = 128;
+        
 
     public ComputeShader m_computeShader;
-    public ComputeBuffer m_ParticleBuffer;
+
+    public ComputeBuffer m_particleBufferSrc;
+    public ComputeBuffer m_particleBufferDst;
 
     public ComputeBuffer m_triangleBuffer;
-    public ComputeBuffer m_argBuffer;
+    public ComputeBuffer m_triangleArgBuffer;
+    public ComputeBuffer m_particleArgBuffer;
 
     public GParticleGPU[] particleArray;
 
@@ -57,6 +61,9 @@ public class GSimGPU
     #region private variables
 
     private Dictionary<string, int> m_kernelIDs = new Dictionary<string, int>();
+
+    private int m_currentNumParticles;
+    private int m_frameNum;
 
     #endregion
 
@@ -72,6 +79,7 @@ public class GSimGPU
         m_computeShader.SetFloat("_dampening", parameters.dampening);
         m_computeShader.SetFloat("_foodExponent", parameters.foodExponent);
         m_computeShader.SetFloat("_threshold", parameters.threshold);
+        m_computeShader.SetFloat("_numParticles", m_currentNumParticles);
     }
 
     public void InitParticle(ref GParticleGPU p)
@@ -88,7 +96,7 @@ public class GSimGPU
 
     public void SetLinks(ref GParticleGPU p, List<int> list)
     {
-        if ( list.Count > 0)
+        if (list.Count > 0)
         {
             p.link0 = list[0];
         }
@@ -136,9 +144,9 @@ public class GSimGPU
 
     public void AddLink(ref GParticleGPU cell, int target)
     {
-        switch(cell.numLinks)
+        switch (cell.numLinks)
         {
-            case 0 :
+            case 0:
                 cell.link0 = target;
                 cell.numLinks++;
                 break;
@@ -174,7 +182,7 @@ public class GSimGPU
                 Debug.LogError("too many links");
                 break;
         }
-        
+
     }
 
     public string PrintLinks(GParticleGPU cell)
@@ -215,8 +223,7 @@ public class GSimGPU
         return result;
     }
 
-
-    public int GetLink( GParticleGPU cell, int i)
+    public int GetLink(GParticleGPU cell, int i)
     {
         switch (i)
         {
@@ -264,14 +271,11 @@ public class GSimGPU
             }
         }
 
-        Debug.Log("wtff");
         return -1;
     }
 
     private void OrderNeighbors(ref GParticleGPU p)
     {
-        Debug.Log($"actual: {p.index} : {PrintLinks(p)} : { p.numLinks} ");
-
         if (p.numLinks < 3)
         {
             return;
@@ -279,12 +283,11 @@ public class GSimGPU
 
         List<int> orderedLinks = new List<int>();
 
-        orderedLinks.Add(GetLink(p,0));
+        orderedLinks.Add(GetLink(p, 0));
         orderedLinks.Add(GetNext(p, GetLink(p, 0)));
 
         for (int i = 2; i < p.numLinks; i++)
         {
-            Debug.Log($"links for {p.index} : {string.Join(",", orderedLinks)}");
             orderedLinks.Add(
                 GetNext(p, orderedLinks[i - 2], orderedLinks[i - 1]));
         }
@@ -299,13 +302,15 @@ public class GSimGPU
         {
             GParticleGPU p = new GParticleGPU();
             InitParticle(ref p);
-            p.position = m.vertices[i]; 
+            p.position = m.vertices[i];
             p.normal = m.normals[i];
-            p.index = i;
             particleList.Add(p);
+
+            if (i  == 0)
+                p.food = 10;
         }
 
-         particleArray = particleList.ToArray();
+        particleArray = particleList.ToArray();
 
         for (int i = 0; i < m.GetIndexCount(0); i += 3)
         {
@@ -322,53 +327,85 @@ public class GSimGPU
             ConnectCell(ref particleArray[ii], ref particleArray[jj], ii, jj);
         }
 
-        //TODO this should be append later
-        m_ParticleBuffer = new ComputeBuffer(particleArray.Length, SIZE_PARTICLE, ComputeBufferType.Append);
-        m_ParticleBuffer.SetData(particleArray);
+        m_particleBufferSrc = new ComputeBuffer(MAX_PARTICLES, SIZE_PARTICLE, ComputeBufferType.Append);
+        m_particleBufferDst = new ComputeBuffer(MAX_PARTICLES, SIZE_PARTICLE, ComputeBufferType.Append);
+        m_particleBufferSrc.SetData(particleArray);
 
         m_triangleBuffer = new ComputeBuffer(1024, SIZE_TRIANGLE, ComputeBufferType.Append);
-        m_argBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
+        m_currentNumParticles = particleArray.Length;
+
+        m_triangleArgBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
+        m_particleArgBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
+    }
+
+    private void SwapBuffers()
+    {
+        ComputeBuffer tmp = m_particleBufferDst;
+        m_particleBufferDst = m_particleBufferSrc;
+        m_particleBufferSrc = tmp;
 
     }
+
     private void InitShadersAndBuffers()
     {
-        m_kernelIDs["GenerateMesh"] = m_computeShader.FindKernel("GenerateMesh");
-        m_computeShader.SetBuffer(m_kernelIDs["GenerateMesh"], "ParticleRWBuffer", m_ParticleBuffer);
-        m_computeShader.SetBuffer(m_kernelIDs["GenerateMesh"], "TriangleAppendBufffer", m_triangleBuffer);
-
-        foreach(var kernelName in m_kernelNames)
+        foreach (var kernelName in m_kernelNames)
         {
             m_kernelIDs[kernelName] = m_computeShader.FindKernel(kernelName);
-            m_computeShader.SetBuffer(m_kernelIDs[kernelName], "ParticleRWBuffer", m_ParticleBuffer);
+            m_computeShader.SetBuffer(m_kernelIDs[kernelName], "ParticleRWBuffer", m_particleBufferSrc);
         }
+
+        m_computeShader.SetBuffer(m_kernelIDs["Split"], "ParticleAppendBuffer", m_particleBufferSrc);
+        m_computeShader.SetBuffer(m_kernelIDs["GenerateMesh"], "TriangleAppendBufffer", m_triangleBuffer);
+    }
+
+    private int GetParticleCount()
+    {
+        int[] args = new int[] { 0, 1, 0, 0 };
+        m_particleArgBuffer.SetData(args);
+
+        ComputeBuffer.CopyCount(m_particleBufferSrc, m_particleArgBuffer, 0);
+
+        m_particleArgBuffer.GetData(args);
+
+        return args[0];
     }
 
     void RunSim()
     {
-        var mWarpCount = Mathf.CeilToInt((float)m_ParticleBuffer.count / WARP_SIZE);
+            parameters.threshold = m_frameNum;
+        Debug.Log("Particle count on STart:" + m_currentNumParticles);
+        var mWarpCount = Mathf.CeilToInt((float)m_currentNumParticles / WARP_SIZE);
+        Debug.Log("mWarpCount" + mWarpCount);
         m_computeShader.Dispatch(m_kernelIDs["Collision"], mWarpCount, 1, 1);
         m_computeShader.Dispatch(m_kernelIDs["Normal"], mWarpCount, 1, 1); // good
         m_computeShader.Dispatch(m_kernelIDs["Bulge"], mWarpCount, 1, 1); // good
         m_computeShader.Dispatch(m_kernelIDs["Spring"], mWarpCount, 1, 1); // maybe
         m_computeShader.Dispatch(m_kernelIDs["Plane"], mWarpCount, 1, 1);
+
+        m_particleBufferDst.SetCounterValue(0);
         m_computeShader.Dispatch(m_kernelIDs["Split"], mWarpCount, 1, 1);
-        m_computeShader.Dispatch(m_kernelIDs["Integrate"], mWarpCount, 1, 1); //good
+       // SwapBuffers();
+        m_currentNumParticles = GetParticleCount();
+
+        Debug.Log("Particle count:" + m_currentNumParticles);
+
+     //   m_computeShader.Dispatch(m_kernelIDs["Integrate"], mWarpCount, 1, 1); //good
     }
 
-    void GenMesh()
+    void CreateMesh()
     {
         m_triangleBuffer.SetCounterValue(0);
-        var mWarpCount = Mathf.CeilToInt((float)m_ParticleBuffer.count / WARP_SIZE);
+        var mWarpCount = Mathf.CeilToInt((float)m_currentNumParticles / WARP_SIZE);
         m_computeShader.Dispatch(m_kernelIDs["GenerateMesh"], mWarpCount, 1, 1);
 
         int[] args = new int[] { 0, 1, 0, 0 };
-        m_argBuffer.SetData(args);
+        m_triangleArgBuffer.SetData(args);
 
-        ComputeBuffer.CopyCount(m_triangleBuffer, m_argBuffer, 0);
+        ComputeBuffer.CopyCount(m_triangleBuffer, m_triangleArgBuffer, 0);
 
-        m_argBuffer.GetData(args);
+        m_triangleArgBuffer.GetData(args);
         args[0] *= 3;
-        m_argBuffer.SetData(args);
+        m_triangleArgBuffer.SetData(args);
 
         Debug.Log("Vertex count:" + args[0]);
     }
@@ -382,8 +419,9 @@ public class GSimGPU
 
         SetParameters();
         RunSim();
+        CreateMesh();
 
-        GenMesh();
+        m_frameNum++;
     }
 
     public void Draw(Material mat, Transform transform)
@@ -391,6 +429,7 @@ public class GSimGPU
         mat.SetPass(0);
         mat.SetBuffer("triangles", m_triangleBuffer);
         mat.SetMatrix("model", transform.localToWorldMatrix);
-        Graphics.DrawProceduralIndirect(MeshTopology.Triangles, m_argBuffer);
+        
+        Graphics.DrawProceduralIndirect(MeshTopology.Triangles, m_triangleArgBuffer);
     }
 }

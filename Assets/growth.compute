@@ -35,12 +35,10 @@ float _planarFactor;
 float _dampening;
 float _foodExponent;
 float _threshold;
-
-
+float _numParticles;
 
 struct Particle
 {
-    int index;
     int links[8];
     int numLinks;
     int age;
@@ -124,7 +122,9 @@ int orientation(float3 p1, float3 p2, float3 p3)
 [numthreads(BLOCKSIZE, 1, 1)]
 void GenerateMesh(uint3 id : SV_DispatchThreadID)
 {
-      
+    if (id.x >= _numParticles)
+        return;
+
     Particle p = ParticleRWBuffer[id.x];
     OrderVerts(id.x);
 
@@ -195,13 +195,12 @@ void ReverseLinks(int p)
     }
 }
 
-[numthreads(BLOCKSIZE, 1, 1)]
-void Normal(uint id : SV_DispatchThreadID)
+void CalculateNormal(int index)
 {
     float3 tmpNormal = (float3) 0.0;
-    Particle p = ParticleRWBuffer[id.x];
+    Particle p = ParticleRWBuffer[index];
 
-    OrderVerts(id.x);
+    OrderVerts(index);
     
     for (int i = 0; i < p.numLinks; i++)
     {
@@ -210,16 +209,22 @@ void Normal(uint id : SV_DispatchThreadID)
         tmpNormal += cross(d, c);
     }
 
-    ParticleRWBuffer[id.x].normal = normalize(p.position);
+    ParticleRWBuffer[index].normal = normalize(p.position);
 
     if (-1 == orientation(
         p.position,
         ParticleRWBuffer[p.links[0]].position,
         ParticleRWBuffer[p.links[1]].position))
     {
-        ParticleRWBuffer[id.x].normal = -ParticleRWBuffer[id.x].normal;
-        ReverseLinks(id.x);
+        ParticleRWBuffer[index].normal = -ParticleRWBuffer[index].normal;
+        ReverseLinks(index);
     }
+}
+
+[numthreads(BLOCKSIZE, 1, 1)]
+void Normal(uint id : SV_DispatchThreadID)
+{
+    CalculateNormal(id.x);
 }
 
 [numthreads(BLOCKSIZE, 1, 1)]
@@ -278,8 +283,8 @@ void Plane(uint id : SV_DispatchThreadID)
     p.delta += planarTarget * _planarFactor;
 
 
-    p.food += pow(max(p.curvature / 20.0f, 0.00001f),
-                               _foodExponent);
+  //  p.food += pow(max(p.curvature / 20.0f, 0.00001f),
+    //                           _foodExponent);
 
 
     ParticleRWBuffer[id.x] = p;
@@ -306,40 +311,159 @@ void Spring(uint id : SV_DispatchThreadID)
     ParticleRWBuffer[id.x] = p;
 }
 
-
-
-
-void DoSplit(int p)
+void Rotate(int p_index, int places)
 {
-    /*
-    int index = (int) cells.Count;
-    cells.Add(new GParticle());
-    GParticle baby = cells[index];
+    Particle p = ParticleRWBuffer[p_index];
+    int scratch[8];
 
-    baby.normal = p.normal;
-    baby.position = p.position;
-    baby.index = index;
-    baby.food = 1;
-    SetLinks(p, baby);
+    int target_index = 0;
+    for (int i = places; i < p.numLinks - places; i ++)
+    {
+        scratch[target_index] = p.links[i];
+        target_index++;
+    }
 
-    SetPositions(p, baby);
+    for (int j = 0; j < places; j++)
+    {
+        scratch[target_index] = p.links[j];
+        target_index++;
+    }
 
-    CalculateNormal(p);
-    CalculateNormal(baby);
+    for (int k = 0; k < p.numLinks; k++)
+    {
+        ParticleRWBuffer[p_index].links[k] = scratch[k];
+    }
+}
 
-    baby.food = 0;
+
+int FindLongestAxis(const Particle p)
+{
+    float maxLength = 1e10;
+    int longestIndex = -1;
+    for (int i = 0; i < p.numLinks; i++)
+    {
+        float distance = length(p.position - ParticleRWBuffer[p.links[i]].position);
+        int opposite = (i + (p.numLinks / 2)) % p.numLinks;
+        distance += length(p.position - ParticleRWBuffer[p.links[opposite]].position);
+        if (distance > maxLength || i == 0)
+        {
+            maxLength = distance;
+            longestIndex = (int) i;
+        }
+    }
+    return longestIndex;
+}
+
+void AddLink(int index, int toAdd)
+{
+    if (ParticleRWBuffer[index].numLinks < 8)
+    {
+        ParticleRWBuffer[index].links[ParticleRWBuffer[index].numLinks] = toAdd;
+        ParticleRWBuffer[index].numLinks++;
+    }
+}
+
+void RemoveLink(int index, int toRemove)
+{
+    for (int i = 0; i < ParticleRWBuffer[index].numLinks; i++)
+    {
+        if (ParticleRWBuffer[index].links[i] == toRemove)
+        {
+            // shift back
+            for (int j = i; j < ParticleRWBuffer[index].numLinks - 1 ; j++)
+            {
+                ParticleRWBuffer[index].links[j] = ParticleRWBuffer[index].links[j + 1];
+            }
+            ParticleRWBuffer[index].numLinks--;
+            return;
+        }
+    }
+}
+
+void SetLinks(int p_index, int b_index)
+{
+    OrderVerts(p_index);
+
+    int firstIndex = FindLongestAxis(ParticleRWBuffer[p_index]);
+
+    Rotate(p_index, firstIndex);
+    int originalLinks[8];
+    int numLinksOriginal = ParticleRWBuffer[p_index].numLinks;
+
+    for (int k = 0; k < ParticleRWBuffer[p_index].numLinks; k++)
+    {
+        originalLinks[k] = ParticleRWBuffer[p_index].links[k];
+    }
+
+    for (int i = 0; i <= numLinksOriginal / 2; i++)
+    {
+        AddLink(b_index, originalLinks[i]);
+        AddLink(originalLinks[i], b_index);
+
+        if (i != 0 && i != numLinksOriginal / 2)
+        {
+            RemoveLink(p_index, originalLinks[i]);
+            RemoveLink(originalLinks[i], p_index);
+        }
+    }
+
+    AddLink(p_index, b_index);
+    AddLink(b_index, p_index);
+}
+
+void SetPositions(int p_index, int b_index)
+{
+    float3 babyAverage = ParticleRWBuffer[p_index].position;
+    for (int i = 0; i < ParticleRWBuffer[b_index].numLinks; ++i)
+    {
+        babyAverage += ParticleRWBuffer[ParticleRWBuffer[b_index].links[i]].position;
+    }
+
+    babyAverage /= ParticleRWBuffer[b_index].numLinks + 1;
+
+    float3 parentAverage = ParticleRWBuffer[p_index].position;
+    for (int i = 0; i < ParticleRWBuffer[p_index].numLinks; ++i)
+    {
+        parentAverage += ParticleRWBuffer[ParticleRWBuffer[p_index].links[i]].position;
+    }
+
+    parentAverage /= ParticleRWBuffer[p_index].numLinks + 1;
+
+        // set positions
+    ParticleRWBuffer[b_index].position = babyAverage;
+    ParticleRWBuffer[p_index].position = parentAverage;
+}
+
+
+void DoSplit(int p_index)
+{
+    Particle p = ParticleRWBuffer[p_index];
+    uint baby_index;
+    uint stride;
+    ParticleAppendBuffer.GetDimensions(baby_index, stride);
+
+    // this is the baby
     p.food = 0;
-*/
+    ParticleAppendBuffer.Append(p);
+    ParticleRWBuffer[p_index].food = 0;
+
+    SetLinks(p_index, baby_index);
+    SetPositions(p_index, baby_index);
+
+    CalculateNormal(p_index);
+    CalculateNormal(baby_index);
+ 
 }
 
 [numthreads(BLOCKSIZE, 1, 1)]
 void Split(uint id : SV_DispatchThreadID)
 {
-    Particle p = ParticleRWBuffer[id.x];
-
-    if (p.food > _threshold)
+    if (id.x < _numParticles)
     {
-        DoSplit();
+        if (_threshold % 60 == 0 && id.x == 1)
+        {
+            DoSplit(id.x);
+        }
     }
 }
 
