@@ -7,7 +7,7 @@ public class growthGPU : MonoBehaviour
 
     [SerializeField, Range(4,30)]
     public float maxNeighbors = 12; 
-    [SerializeField, Range(0.1f,10)]
+    [SerializeField, Range(0f,10)]
     public float radius = 3;
     [SerializeField, Range(0,1)]
     public float collisionFactor = 1;
@@ -23,8 +23,6 @@ public class growthGPU : MonoBehaviour
     public float dampening = 0.1f;
     [SerializeField, Range(0,10)]
     public float foodExponent = 1; 
-    [SerializeField]
-    public bool longestAxis = true;
     [SerializeField, Range(0,300)]
     public float threshold = 10;
 
@@ -54,7 +52,12 @@ public class growthGPU : MonoBehaviour
     {
         sim.Draw(triangleMat, transform);
     }
- 
+
+    private void OnDestroy()
+    {
+        sim.Release();
+    }
+
     /*
     void OnDrawGizmos()
     {
@@ -70,5 +73,5 @@ public class growthGPU : MonoBehaviour
         }
     }
     */
- 
+
 }

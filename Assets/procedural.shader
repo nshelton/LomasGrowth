@@ -31,7 +31,10 @@
 			{
 				float4 vertex : SV_POSITION;
 				float3 normal : NORMAL;
+				float3 color : COLOR;
 			};
+
+			float random(float2 p){return frac(cos(dot(p,float2(23.14069263277926,2.665144142690225)))*12345.6789);}
 
 			v2f vert(uint id : SV_VertexID)
 			{
@@ -41,13 +44,15 @@
 				v2f o;
 				o.vertex = UnityObjectToClipPos(mul(model, float4(triangles[pid].v[vid].vPosition, 1)));
 				o.normal = mul(unity_ObjectToWorld, triangles[pid].v[vid].vNormal);
+				o.color = float3(random(pid), random(pid+1), random(pid+2));
 				return o;
 			}
 
 			float4 frag(v2f i) : SV_Target
 			{
 				float d = max(dot(normalize(_WorldSpaceLightPos0.xyz), i.normal), 0);
-				return float4(d,d,d, 1);
+				return float4(d, d, d, 1);
+				//return float4(i.color, 1);
 			}
 			ENDCG
 		}
