@@ -65,18 +65,19 @@ struct Triangle
 AppendStructuredBuffer<Triangle> TriangleAppendBufffer;
 RWStructuredBuffer<Particle> ParticleRWBuffer;
 
+
 int GetNext(int p, int previousIndex, int currentIndex)
 {
     Particle current = ParticleRWBuffer[currentIndex];
     Particle thisParticle = ParticleRWBuffer[p];
 
-    for (int i = 0; i < thisParticle.numLinks; i++)
-    {
-        for (int j = 0; j < current.numLinks; j++)
-        {
+    for (int i = 0; i < thisParticle.numLinks; i++)  {
+        for (int j = 0; j < current.numLinks; j++)  {
+
             if ((thisParticle.links[i] == current.links[j]) &&
-                (thisParticle.links[i] != previousIndex) && (thisParticle.links[i] != currentIndex))
-            {
+                (thisParticle.links[i] != previousIndex) && 
+                (thisParticle.links[i] != currentIndex))  {
+
                 return thisParticle.links[i];
             }
         }
@@ -85,13 +86,94 @@ int GetNext(int p, int previousIndex, int currentIndex)
     return -19;
 }
 
-int GetNext(int p, int currentIndex)
+int GetNext(int p, int i)
 {
-    return GetNext(p, currentIndex, currentIndex);
+    return GetNext(p, i, i);
+}
+
+
+int orientation(float3 p1, float3 p2, float3 p3)
+{
+    float val = (p2.y - p1.y) * (p3.x - p2.x) -
+                (p2.x - p1.x) * (p3.y - p2.y);
+  
+    if (val == 0)
+        return 0; 
+  
+    return (val > 0) ? -1 : 1;  
+}
+
+int FindNextLink (int a, int b, int last)
+{
+    Particle center = ParticleRWBuffer[a];
+    Particle arm = ParticleRWBuffer[b];
+
+ 
+    for (int j = 0; j < arm.numLinks; j++)
+    {
+        int possibleNext = arm.links[j];
+        for (int k = 0; k < center.numLinks; k++)
+        {
+            if (center.links[k] == possibleNext && possibleNext != last)
+                return possibleNext;
+        }
+    }
+    
+    return -99;
+
+}
+
+void ReverseLinks(int p)
+{
+    return;
+    Particle part = ParticleRWBuffer[p];
+     
+    for (int i = 0; i < MAX_LINKS / 2; i++)
+    {
+        if (i >= part.numLinks / 2)
+            break;
+
+        int tmp = part.links[i];
+        ParticleRWBuffer[p].links[i] = part.links[part.numLinks - 1 - i];
+        ParticleRWBuffer[p].links[part.numLinks - 1 - i] = tmp;
+    }
+}
+
+void OrderLinks2(int p)
+{
+    if (ParticleRWBuffer[p].numLinks < 3)
+        return;
+
+    int orderedLinks[MAX_LINKS];
+
+    orderedLinks[0] = ParticleRWBuffer[p].links[0];
+    orderedLinks[1] = FindNextLink(p, orderedLinks[0], -1);
+
+    for (int i = 2; i < ParticleRWBuffer[p].numLinks; i++)
+    {
+        orderedLinks[i] = FindNextLink(p, orderedLinks[i - 1], orderedLinks[i - 2]);
+    }
+
+    for (int j = 0; j < ParticleRWBuffer[p].numLinks; j++)
+    {
+        ParticleRWBuffer[p].links[j] = orderedLinks[j];
+    }
+    
+ /*   if (orientation(
+            ParticleRWBuffer[orderedLinks[0]].position,
+            ParticleRWBuffer[orderedLinks[1]].position,
+            ParticleRWBuffer[orderedLinks[2]].position) == -1)
+    {
+        ReverseLinks(p);
+    }
+   */ 
 }
 
 void OrderLinks(int p)
 {
+  // OrderLinks2(p);
+  //  return;
+
     if (ParticleRWBuffer[p].numLinks < 3)
         return;
     
@@ -105,21 +187,10 @@ void OrderLinks(int p)
         orderedLinks[i] = GetNext(p, orderedLinks[i - 2], orderedLinks[i - 1]);
     }
 
-    for (int ii = 0; ii < ParticleRWBuffer[p].numLinks; ii++)
+    for (int j = 0; j < ParticleRWBuffer[p].numLinks; j++)
     {
-        ParticleRWBuffer[p].links[ii] = orderedLinks[ii];
+        ParticleRWBuffer[p].links[j] = orderedLinks[j];
     }
-}
-
-int orientation(float3 p1, float3 p2, float3 p3)
-{
-    int val = (p2.y - p1.y) * (p3.x - p2.x) -
-              (p2.x - p1.x) * (p3.y - p2.y);
-  
-    if (val == 0)
-        return 0; // colinear 
-  
-    return (val > 0) ? -1 : 1; // clock or counterclock wise 
 }
 
 [numthreads(BLOCKSIZE, 1, 1)]
@@ -129,7 +200,7 @@ void GenerateMesh(uint3 id : SV_DispatchThreadID)
         return;
 
     Particle p = ParticleRWBuffer[id.x];
-    OrderLinks(id.x);
+   // OrderLinks(id.x);
 
     for (int i = 0; i < p.numLinks; i++)
     { 
@@ -165,6 +236,18 @@ void GenerateMesh(uint3 id : SV_DispatchThreadID)
     }
 }
 
+bool isConnected(int i, int j)
+{
+    Particle p = ParticleRWBuffer[i];
+
+    for (int k = 0; k < p.numLinks; k++)
+    {
+        if (p.links[k] == j)
+            return true;
+    }
+    return false;
+}
+
 [numthreads(BLOCKSIZE, 1, 1)]
 void Collision(uint id : SV_DispatchThreadID)
 {
@@ -173,7 +256,7 @@ void Collision(uint id : SV_DispatchThreadID)
     float r2 = max(0.001f, _radius * _radius);
     for (int i = 0; i < _numParticles; i ++)
     {
-        if ( i != id.x)
+        if (i != id.x && !isConnected(i, id.x))
         {
             float3 displacement = (p.position - ParticleRWBuffer[i].position);
             float d2 = dot(displacement, displacement);
@@ -191,21 +274,6 @@ void Collision(uint id : SV_DispatchThreadID)
     ParticleRWBuffer[id.x] = p;
 }
 
-void ReverseLinks(int p)
-{
-    Particle part = ParticleRWBuffer[p];
-      
-    for (int i = 0; i < MAX_LINKS/2; i++)
-    {
-        if (i >= part.numLinks / 2)
-            break;
-
-        int tmp = part.links[i];
-        ParticleRWBuffer[p].links[i] = part.links[part.numLinks - 1 - i];
-        ParticleRWBuffer[p].links[part.numLinks - 1 - i] = tmp;
-    }
-}
-
 void CalculateNormal(int index)
 {
     float3 tmpNormal = (float3) 0.0;
@@ -217,21 +285,19 @@ void CalculateNormal(int index)
     {
         float3 c = ParticleRWBuffer[p.links[i]].position;
         float3 d = ParticleRWBuffer[p.links[(i + 1) % p.numLinks]].position;
-        tmpNormal += cross(d, c);
-    }
 
-    ParticleRWBuffer[index].normal = normalize(p.position);
-
-  
-   /* if (-1 == orientation(
+        if (-1 == orientation(
         p.position,
         ParticleRWBuffer[p.links[0]].position,
         ParticleRWBuffer[p.links[1]].position))
-    {
-        ParticleRWBuffer[index].normal = -ParticleRWBuffer[index].normal;
-        ReverseLinks(index);
+        {
+            ParticleRWBuffer[index].normal = -ParticleRWBuffer[index].normal;
+        }
+
+        tmpNormal += cross(d, c);
     }
- */
+
+    ParticleRWBuffer[index].normal = normalize(tmpNormal);
 }
 
 [numthreads(BLOCKSIZE, 1, 1)]
@@ -291,7 +357,7 @@ void Plane(uint id : SV_DispatchThreadID)
     planarTarget = planarTarget - p.position;
 
     p.curvature = -1.0 * length(planarTarget) *
-                         dot(p.normal, normalize(planarTarget));
+                          dot(p.normal, normalize(planarTarget));
 
     p.delta += planarTarget * _planarFactor;
 
@@ -345,6 +411,22 @@ void Rotate(int p_index, int places)
     }
 }
 
+int FindLongestEdge(const Particle p)
+{
+    float longest = 0;
+    int longestIndex = -20;
+    for (int i = 0; i < p.numLinks; i++)
+    {
+        float distance = length(p.position - ParticleRWBuffer[p.links[i]].position);
+        if ( distance > longest)
+        {
+            longest = distance;
+            longestIndex = i;
+        }
+    }
+
+    return longestIndex;
+}
 
 int FindLongestAxis(const Particle p)
 {
@@ -361,11 +443,12 @@ int FindLongestAxis(const Particle p)
             shortest  =  i;
         }
     }
-    return shortest ;
+    return shortest;
 }
 
 void AddLink(int index, int toAdd)
 {
+    // already has the link???
     for (int k = 0; k < ParticleRWBuffer[index].numLinks; k++)
     {
         if (ParticleRWBuffer[index].links[k] == toAdd)
@@ -398,38 +481,87 @@ void RemoveLink(int index, int toRemove)
         }
     }
 }
+void ReplaceLink(int target, int old_index, int new_index)
+{
+    Particle p = ParticleRWBuffer[target];
+    for (int i = 0; i < p.numLinks; i++)
+    {
+        if (p.links[i] == old_index)
+        {
+            ParticleRWBuffer[target].links[i] = new_index;
+            return;
+        }
+    }
+}
 
-void SetLinks(int p_index, int b_index)
+void SetLinksNew(int p_index, int b_index)
+{
+
+    // get Neighbor with Lowest degree
+    int lowestDegree = 99999;
+    int neighborWithLowestDegree = -1;
+    int neighborLinkIndexWithLowestDegree = -1;
+    Particle p = ParticleRWBuffer[p_index];
+
+    for (int i = 0; i < p.numLinks; i ++)
+    {
+        if (ParticleRWBuffer[p.links[i]].numLinks < lowestDegree )
+        {
+            lowestDegree = ParticleRWBuffer[p.links[i]].numLinks;
+            neighborWithLowestDegree = p.links[i];
+            neighborLinkIndexWithLowestDegree = i;
+
+        }
+    }
+
+    AddLink(b_index, neighborWithLowestDegree);
+    AddLink(neighborWithLowestDegree, b_index);
+
+    for (int j = neighborLinkIndexWithLowestDegree + 1; 
+        j < neighborLinkIndexWithLowestDegree + p.numLinks / 2  ; j++)
+    {
+        ReplaceLink(p.links[j % p.numLinks], p_index, b_index);
+    }
+    
+    int oppositeLinkIndex = p.links[(neighborLinkIndexWithLowestDegree + p.numLinks / 2) % p.numLinks];
+
+    AddLink(b_index, oppositeLinkIndex);
+    AddLink(oppositeLinkIndex, b_index);
+    
+    AddLink(p_index, b_index);
+    AddLink(b_index, p_index);
+}
+
+void SetLinks (int p_index, int b_index)
 {
     OrderLinks(p_index);
 
     int firstIndex = FindLongestAxis(ParticleRWBuffer[p_index]);
-    if (firstIndex != -20)
+
+    Rotate(p_index, firstIndex);
+    int originalLinks[MAX_LINKS];
+    int numLinksOriginal = ParticleRWBuffer[p_index].numLinks;
+
+    for (int k = 0; k < ParticleRWBuffer[p_index].numLinks; k++)
     {
-        Rotate(p_index, firstIndex);
-        int originalLinks[MAX_LINKS];
-        int numLinksOriginal = ParticleRWBuffer[p_index].numLinks;
-
-        for (int k = 0; k < ParticleRWBuffer[p_index].numLinks; k++)
-        {
-            originalLinks[k] = ParticleRWBuffer[p_index].links[k];
-        }
-
-        for (int i = 0; i <= numLinksOriginal / 2; i++)
-        {
-            AddLink(b_index, originalLinks[i]);
-            AddLink(originalLinks[i], b_index);
-
-            if (i != 0 && i != numLinksOriginal / 2)
-            {
-                RemoveLink(p_index, originalLinks[i]);
-                RemoveLink(originalLinks[i], p_index);
-            }
-        }
-
-        AddLink(p_index, b_index);
-        AddLink(b_index, p_index);
+        originalLinks[k] = ParticleRWBuffer[p_index].links[k];
     }
+
+    for (int i = 0; i <= numLinksOriginal / 2; i++)
+    {
+        AddLink(b_index, originalLinks[i]);
+        AddLink(originalLinks[i], b_index);
+
+        if (i != 0 && i != numLinksOriginal / 2)
+        {
+            RemoveLink(p_index, originalLinks[i]);
+            RemoveLink(originalLinks[i], p_index);
+        }
+    }
+
+    AddLink(p_index, b_index);
+    AddLink(b_index, p_index);
+
 }
 
 void SetPositions(int p_index, int b_index)
@@ -459,17 +591,25 @@ void SetPositions(int p_index, int b_index)
 void DoSplit(int p_index)
 {
     // Copy the particle for its baby
-    Particle baby = ParticleRWBuffer[p_index];
+    Particle baby;
     baby.numLinks = 0;
     baby.food = 0;
 
+    // zero out links for baby
     for (int j = 0; j < MAX_LINKS; ++j)
     {
         baby.links[j] = -2;
     }
 
-    ParticleRWBuffer[ _numParticles] = baby;
-    ParticleRWBuffer.IncrementCounter();
+
+    baby.age = 0;
+    baby.food = 0;
+    baby.curvature = 0;
+    baby.position = 0;
+    baby.delta = 0;
+    baby.normal = 0;
+
+    ParticleRWBuffer[_numParticles] = baby;
 
     int baby_index = _numParticles;
     ParticleRWBuffer[p_index].food = 0;
@@ -479,6 +619,9 @@ void DoSplit(int p_index)
 
     CalculateNormal(p_index);
     CalculateNormal(baby_index);
+
+    
+    ParticleRWBuffer.IncrementCounter();
 }
 
 [numthreads(BLOCKSIZE, 1, 1)]
@@ -486,13 +629,13 @@ void Split(uint id : SV_DispatchThreadID)
 {
     if (id.x < _numParticles)
     {
-      if (ParticleRWBuffer[id.x].food > _threshold && 
+        if (ParticleRWBuffer[id.x].food > _threshold &&
              _frameNum % _numParticles == id.x)
    
      //   if (_frameNum % 60 == 0 &&
   //        _frameNum / 60 == id.x)
             
-      //  if (_frameNum ==30  && 5 == id.x)
+    //  if (_frameNum ==30  && 5 == id.x)
         {
             DoSplit(id.x);
         }
@@ -512,5 +655,5 @@ void Integrate(uint id : SV_DispatchThreadID)
 [numthreads(BLOCKSIZE, 1, 1)]
 void RotateTest(uint id : SV_DispatchThreadID)
 {
-    ReverseLinks(id.x);
+    Rotate(id.x, 2);
 }

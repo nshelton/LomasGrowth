@@ -1,4 +1,6 @@
-﻿using Supercluster.KDTree;
+﻿using KdTree;
+using KdTree.Math;
+using Supercluster.KDTree;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -55,11 +57,12 @@ public class GSim
 
     public void Tick()
     {
-        //Profiler.BeginSample("AddCollisionForce");
-        AddCollisionForce();
-        //Profiler.EndSample();
+        Profiler.BeginSample("AddCollisionForce");
+        //AddCollisionForce();
+        AddCollisionBruteForce();
+        Profiler.EndSample();
 
-        //Profiler.BeginSample("Iterate");
+        Profiler.BeginSample("Iterate");
         for (int i = 0; i < cells.Count; i++)
         {
             var p = cells[i];
@@ -74,9 +77,9 @@ public class GSim
             p.food += Mathf.Pow(Mathf.Max(p.curvature / 20.0f, 0.00001f),
                                parameters.foodExponent);
         }
-        //Profiler.EndSample();
+        Profiler.EndSample();
 
-        //Profiler.BeginSample("All Splits");
+        Profiler.BeginSample("All Splits");
         for ( int i = 0; i < cells.Count; i ++)
         {
             var p = cells[i];
@@ -84,12 +87,12 @@ public class GSim
             {
                 Split(p);
             }
-            //Profiler.EndSample();
         }
+        Profiler.EndSample();
 
-        //Profiler.BeginSample("IntegrateParticles");
+        Profiler.BeginSample("IntegrateParticles");
         IntegrateParticles();
-        //Profiler.EndSample();
+        Profiler.EndSample();
 
         Debug.Log($"fRAME {simFrame++} : {cells.Count}");
     }
@@ -126,6 +129,18 @@ public class GSim
 
     private Vector3 tmpNormal;
 
+    int orientation(Vector3 p1, Vector3 p2, Vector3 p3)
+    {
+        float val = (p2.y - p1.y) * (p3.x - p2.x) -
+                  (p2.x - p1.x) * (p3.y - p2.y);
+
+        if (val == 0)
+            return 0; // colinear 
+
+        return (val > 0) ? -1 : 1; // clock or counterclock wise 
+    }
+
+
     private void CalculateNormal(GParticle p)
     {
         OrderNeighbors(p);
@@ -142,7 +157,10 @@ public class GSim
         // area = newNormal.squaredNorm();
         tmpNormal = tmpNormal.normalized;
 
-        if (Vector3.Dot(tmpNormal, p.normal) >= 0)
+        if (orientation(
+            p.position, 
+            cells[p.links[0]].position, 
+            cells[p.links[1]].position) < 0 )
         {
             p.normal = tmpNormal;
         }
@@ -204,7 +222,8 @@ public class GSim
             for (int j = 0; j < current.links.Count; j++)
             {
                 if ((p.links[i] == current.links[j]) &&
-                    (p.links[i] != previousIndex) && (p.links[i] != currentIndex))
+                    (p.links[i] != previousIndex) && 
+                    (p.links[i] != currentIndex))
                 {
                     return p.links[i];
                 }
@@ -312,6 +331,52 @@ public class GSim
 
     private List<double[]> _points = new List<double[]>();
     private List<int> _nodes = new List<int>();
+
+    private void AddCollisionBruteForce()
+    {
+        var tree = new KdTree<float, int>(3, new FloatMath());
+
+        for (int i = 0; i < cells.Count; i++)
+        {
+            tree.Add(new[] { cells[i].position.x, cells[i].position.y, cells[i].position.z }, i);
+        }
+
+
+        double radiusSquared = parameters.radius * parameters.radius;
+
+        for (int i = 0; i < cells.Count; i++)
+        {
+            GParticle p = cells[i];
+            p.collisions = 0;
+
+            var rsquared = parameters.radius * parameters.radius;
+
+            var neighbors = tree.GetNearestNeighbours(new[] { cells[i].position.x, cells[i].position.y, cells[i].position.z },
+                (int)parameters.maxNeighbors);
+
+            for (int j = 0; j < neighbors.Length; j++)
+            {
+                GParticle q = cells[neighbors[j].Value];
+                Vector3 displacement = p.position - q.position;
+
+                if (displacement.magnitude < parameters.radius)
+                {
+                    float distanceSquared = displacement.x * displacement.x +
+                          displacement.y * displacement.y +
+                          displacement.z * displacement.z;
+
+                    if ((i != j) && (!p.connectedTo(j)))
+                    {
+                        displacement.Normalize();
+                        displacement *= (rsquared - distanceSquared) / rsquared; // TODO sqrt here? NGS what is this even ????
+
+                        p.delta += displacement * parameters.collisionFactor;
+                        p.collisions++;
+                    }
+                }
+            }
+        }
+    }
 
     private void AddCollisionForce()
     {

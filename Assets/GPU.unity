@@ -218,7 +218,7 @@ Camera:
   m_Enabled: 1
   serializedVersion: 2
   m_ClearFlags: 2
-  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_BackGroundColor: {r: 0.6415094, g: 0.6415094, b: 0.6415094, a: 0}
   m_projectionMatrixMode: 1
   m_SensorSize: {x: 36, y: 24}
   m_LensShift: {x: 0, y: 0}
@@ -361,7 +361,7 @@ MonoBehaviour:
   springLength: 0.9
   planarFactor: 0.09
   dampening: 0.097
-  foodExponent: 1
+  foodExponent: 0.54
   threshold: 10
   triangleMat: {fileID: 2100000, guid: 02c4d88a917636d4ca6440f395db875b, type: 2}
   m_computeShader: {fileID: 7200000, guid: 44f10af7ae9d98143a1b8cc27c02f6bb, type: 3}
@@ -374,7 +374,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1344433778}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 0, y: 0, z: 20}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}

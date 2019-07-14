@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -149,14 +150,22 @@ public class GSimGPU
 
     public bool ContainsLink(GParticleGPU cell, int target)
     {
-        return cell.link00 == target ||
-             cell.link01 == target ||
-             cell.link02 == target ||
-             cell.link03 == target ||
-             cell.link04 == target ||
-             cell.link05 == target ||
-             cell.link06 == target ||
-             cell.link07 == target;
+        return  cell.link00 == target ||
+                cell.link01 == target ||
+                cell.link02 == target ||
+                cell.link03 == target ||
+                cell.link04 == target ||
+                cell.link05 == target ||
+                cell.link06 == target ||
+                cell.link07 == target ||
+                cell.link08 == target ||
+                cell.link09 == target ||
+                cell.link10 == target ||
+                cell.link11 == target ||
+                cell.link12 == target ||
+                cell.link13 == target ||
+                cell.link14 == target ||
+                cell.link15 == target;
     }
 
     public void AddLink(ref GParticleGPU cell, int target)
@@ -236,6 +245,39 @@ public class GSimGPU
         {
             result += ", " + cell.link07;
         }
+        if (cell.numLinks > 8)
+        {
+            result += ", " + cell.link08;
+        }
+        if (cell.numLinks > 9)
+        {
+            result += ", " + cell.link09;
+        }
+        if (cell.numLinks >10)
+        {
+            result += ", " + cell.link10;
+        }
+        if (cell.numLinks > 11)
+        {
+            result += ", " + cell.link11;
+        }
+        if (cell.numLinks > 12)
+        {
+            result += ", " + cell.link12;
+        }
+        if (cell.numLinks > 13)
+        {
+            result += ", " + cell.link13;
+        }
+        if (cell.numLinks > 14)
+        {
+            result += ", " + cell.link14;
+        }
+        if (cell.numLinks > 15)
+        {
+            result += ", " + cell.link15;
+        }
+
         return result;
     }
 
@@ -370,7 +412,6 @@ public class GSimGPU
             m_computeShader.SetBuffer(m_kernelIDs[kernelName], "ParticleRWBuffer", m_particleBuffer);
         }
 
-        m_computeShader.SetBuffer(m_kernelIDs["Split"], "ParticleAppendBuffer", m_particleBuffer);
         m_computeShader.SetBuffer(m_kernelIDs["GenerateMesh"], "TriangleAppendBufffer", m_triangleBuffer);
 
     }
@@ -384,6 +425,10 @@ public class GSimGPU
         return args[0];
     }
 
+    GParticleGPU[] lastgpuData = new GParticleGPU[MAX_PARTICLES];
+    GParticleGPU[] thisgpuData = new GParticleGPU[MAX_PARTICLES];
+    private List<int> m_particleCounts = new List<int>();
+
     void RunSim()
     {
         var mWarpCount = Mathf.CeilToInt((float)m_currentNumParticles / WARP_SIZE);
@@ -394,24 +439,69 @@ public class GSimGPU
         m_computeShader.Dispatch(m_kernelIDs["Plane"], mWarpCount, 1, 1);
 
         m_computeShader.Dispatch(m_kernelIDs["Split"], mWarpCount, 1, 1);
+
+
+        Debug.Log("Particle count:" + m_currentNumParticles);
+        m_computeShader.Dispatch(m_kernelIDs["Integrate"], mWarpCount, 1, 1); //good
+
+        lastgpuData = (GParticleGPU[])(thisgpuData.Clone());
+        m_particleCounts.Add(m_currentNumParticles);
+
         m_currentNumParticles = GetParticleCount();
+        m_particleBuffer.GetData(thisgpuData);
 
-         GParticleGPU[] gpuData = new GParticleGPU[MAX_PARTICLES];
-         m_particleBuffer.GetData(gpuData);
+        CheckGraphConsistency();
+        CheckCorruption();
 
-        for ( int i = 0; i < m_currentNumParticles; i++)
+    }
+
+    private void CheckCorruption()
+    {
+        for (int i = 0; i < m_currentNumParticles; i++)
         {
-            for (int j = 0; j < gpuData[i].numLinks; j++)
+
+            if (PrintLinks(lastgpuData[i]) != PrintLinks(thisgpuData[i]))
             {
-                if ( GetLink(gpuData[i], j) < 0)
+                Debug.LogWarning($"================linkChange= {i}=================");
+
+                Debug.LogWarning($"<<<<{i} was ({lastgpuData[i].numLinks}) {PrintLinks(lastgpuData[i])}");
+                Debug.LogWarning($">>>>{i} now ({thisgpuData[i].numLinks}) {PrintLinks(thisgpuData[i])}");
+            }
+
+            for (int j = 0; j < thisgpuData[i].numLinks; j++)
+            {
+                if (GetLink(thisgpuData[i], j) < 0)
                 {
-                    Debug.LogError($"{i} : {j} {GetLink(gpuData[i], j)}");
+                    Debug.LogError($"{i} : {j} {GetLink(thisgpuData[i], j)}");
+                }
+            }
+        }
+    }
+
+    private void CheckGraphConsistency()
+    {
+
+        for ( int i = 0; i < thisgpuData.Length; i ++)
+        {
+            var cell = thisgpuData[i];
+            for(int j = 0; j < cell.numLinks; j ++)
+            {
+                var to = GetLink(cell, j);
+                var from = i;
+
+                if ( to < 0  || to >= thisgpuData.Length)
+                {
+                    Debug.LogError($"{ i} has link-> {to}");
+                }
+                else if  (!ContainsLink(thisgpuData[to], from))
+                {
+                    Debug.LogError("Inconsistent");
+                    Debug.LogError($"<<<<{from} : {PrintLinks(thisgpuData[from])}");
+                    Debug.LogError($">>>>{to} : {PrintLinks(thisgpuData[to])}");
                 }
             }
         }
 
-        Debug.Log("Particle count:" + m_currentNumParticles);
-        m_computeShader.Dispatch(m_kernelIDs["Integrate"], mWarpCount, 1, 1); //good
     }
 
     void CreateMesh()
@@ -444,24 +534,24 @@ public class GSimGPU
         {
             InitShadersAndBuffers();
         }
-
-        SetParameters();
-        RunSim();
-        CreateMesh();
-
+      
+              SetParameters();
+              RunSim();
+              CreateMesh();
+   
         m_frameNum++;
 
-        /*
-       GParticleGPU[] gpuData = new GParticleGPU[MAX_PARTICLES];
 
-      m_computeShader.Dispatch(m_kernelIDs["RotateTest"], 1, 1, 1);
-       m_currentNumParticles = GetParticleCount();
+        /*    GParticleGPU[] gpuData = new GParticleGPU[MAX_PARTICLES];
 
-      m_particleBuffer.GetData(gpuData);
+          m_computeShader.Dispatch(m_kernelIDs["RotateTest"], 1, 1, 1);
+          m_currentNumParticles = GetParticleCount();
 
-       Debug.Log(PrintLinks(gpuData[0]));
-       m_computeShader.SetInt("_frameNum", m_frameNum);
-        */
+          m_particleBuffer.GetData(gpuData);
+
+          Debug.Log(PrintLinks(gpuData[0]));
+          m_computeShader.SetInt("_frameNum", m_frameNum);
+            */
     }
 
     public void Draw(Material mat, Transform transform)

@@ -44,15 +44,24 @@
 				v2f o;
 				o.vertex = UnityObjectToClipPos(mul(model, float4(triangles[pid].v[vid].vPosition, 1)));
 				o.normal = mul(unity_ObjectToWorld, triangles[pid].v[vid].vNormal);
-				o.color = float3(random(pid), random(pid+1), random(pid+2));
+				o.color = float3(vid == 0 ? 0 : 1,vid == 1 ? 0 : 1, vid == 2 ? 0 : 1 );
 				return o;
 			}
 
 			float4 frag(v2f i) : SV_Target
 			{
-				float d = max(dot(normalize(_WorldSpaceLightPos0.xyz), i.normal), 0);
+				float d = abs(dot(normalize(float3(1,1,1)), i.normal));
 				return float4(d, d, d, 1);
-				//return float4(i.color, 1);
+
+				float3 c = (float3) 0.0;
+
+				float thresh = 0.98;
+			
+				float dist = max(max(i.color.x, i.color.y), i.color.z);
+
+				c.g = smoothstep(0.9, 1, dist);
+
+			    return float4(c, 1);
 			}
 			ENDCG
 		}
