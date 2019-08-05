@@ -14,10 +14,10 @@ OcclusionCullingSettings:
 RenderSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 9
-  m_Fog: 0
-  m_FogColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  m_Fog: 1
+  m_FogColor: {r: 0, g: 0, b: 0, a: 1}
   m_FogMode: 3
-  m_FogDensity: 0.01
+  m_FogDensity: 0.03
   m_LinearFogStart: 0
   m_LinearFogEnd: 300
   m_AmbientSkyColor: {r: 0.212, g: 0.227, b: 0.259, a: 1}
@@ -218,7 +218,7 @@ Camera:
   m_Enabled: 1
   serializedVersion: 2
   m_ClearFlags: 2
-  m_BackGroundColor: {r: 0.6415094, g: 0.6415094, b: 0.6415094, a: 0}
+  m_BackGroundColor: {r: 0, g: 0, b: 0, a: 0}
   m_projectionMatrixMode: 1
   m_SensorSize: {x: 36, y: 24}
   m_LensShift: {x: 0, y: 0}
@@ -334,6 +334,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1344433780}
   - component: {fileID: 1344433779}
+  - component: {fileID: 1344433781}
   m_Layer: 0
   m_Name: growth
   m_TagString: Untagged
@@ -354,15 +355,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   maxNeighbors: 12
-  radius: 3
-  collisionFactor: 0.074
+  radius: 6.99
+  collisionFactor: 0.548
   bulgeFactor: 0.1
   springFactor: 0.093
   springLength: 0.9
-  planarFactor: 0.09
+  planarFactor: 0.631
   dampening: 0.097
-  foodExponent: 0.54
-  threshold: 10
+  foodExponent: 0.57
+  threshold: 67.6
   triangleMat: {fileID: 2100000, guid: 02c4d88a917636d4ca6440f395db875b, type: 2}
   m_computeShader: {fileID: 7200000, guid: 44f10af7ae9d98143a1b8cc27c02f6bb, type: 3}
   m_mesh: {fileID: 4300000, guid: 3ee2cac3cfd25884d8c0a321563f64ed, type: 3}
@@ -380,6 +381,20 @@ Transform:
   m_Father: {fileID: 0}
   m_RootOrder: 2
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1344433781
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1344433778}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1dbf5fb068517d64eab4de4bc33ffd63, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  speedY: 8.85
+  axis: {x: 0.2, y: 0.5, z: 0}
 --- !u!1 &1496172324
 GameObject:
   m_ObjectHideFlags: 0

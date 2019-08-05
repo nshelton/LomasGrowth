@@ -1,0 +1,79 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!181963792 &2655988077585873504
+Preset:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: tendrils
+  m_TargetType:
+    m_NativeTypeID: 114
+    m_ManagedTypePPtr: {fileID: 11500000, guid: ddd4221610fe6c64e826747430478aca,
+      type: 3}
+    m_ManagedTypeFallback: 
+  m_Properties:
+  - target: {fileID: 0}
+    propertyPath: m_Enabled
+    value: 1
+    objectReference: {fileID: 0}
+  - target: {fileID: 0}
+    propertyPath: m_EditorHideFlags
+    value: 0
+    objectReference: {fileID: 0}
+  - target: {fileID: 0}
+    propertyPath: m_EditorClassIdentifier
+    value: 
+    objectReference: {fileID: 0}
+  - target: {fileID: 0}
+    propertyPath: maxNeighbors
+    value: 12
+    objectReference: {fileID: 0}
+  - target: {fileID: 0}
+    propertyPath: radius
+    value: 6.99
+    objectReference: {fileID: 0}
+  - target: {fileID: 0}
+    propertyPath: collisionFactor
+    value: 0.548
+    objectReference: {fileID: 0}
+  - target: {fileID: 0}
+    propertyPath: bulgeFactor
+    value: 0.1
+    objectReference: {fileID: 0}
+  - target: {fileID: 0}
+    propertyPath: springFactor
+    value: 0.093
+    objectReference: {fileID: 0}
+  - target: {fileID: 0}
+    propertyPath: springLength
+    value: 0.9
+    objectReference: {fileID: 0}
+  - target: {fileID: 0}
+    propertyPath: planarFactor
+    value: 0.631
+    objectReference: {fileID: 0}
+  - target: {fileID: 0}
+    propertyPath: dampening
+    value: 0.097
+    objectReference: {fileID: 0}
+  - target: {fileID: 0}
+    propertyPath: foodExponent
+    value: 0.21
+    objectReference: {fileID: 0}
+  - target: {fileID: 0}
+    propertyPath: threshold
+    value: 9
+    objectReference: {fileID: 0}
+  - target: {fileID: 0}
+    propertyPath: triangleMat
+    value: 
+    objectReference: {fileID: 2100000, guid: 02c4d88a917636d4ca6440f395db875b, type: 2}
+  - target: {fileID: 0}
+    propertyPath: m_computeShader
+    value: 
+    objectReference: {fileID: 7200000, guid: 44f10af7ae9d98143a1b8cc27c02f6bb, type: 3}
+  - target: {fileID: 0}
+    propertyPath: m_mesh
+    value: 
+    objectReference: {fileID: 4300000, guid: 3ee2cac3cfd25884d8c0a321563f64ed, type: 3}

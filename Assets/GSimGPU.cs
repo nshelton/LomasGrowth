@@ -51,7 +51,7 @@ public class GSimGPU
     private const int SIZE_PARTICLE = 18 * sizeof(int) + 11 * sizeof(float);
     private const int SIZE_TRIANGLE = 18 * sizeof(float);
     private const int WARP_SIZE = 64;
-    private const int MAX_PARTICLES = 1024;
+    private const int MAX_PARTICLES = 1024 * 10 ;
         
 
     public ComputeShader m_computeShader;
@@ -397,9 +397,9 @@ public class GSimGPU
         m_particleBuffer.SetData(particleArray);
         m_particleBuffer.SetCounterValue((uint)particleArray.Length);
 
-        m_triangleBuffer = new ComputeBuffer(1024, SIZE_TRIANGLE, ComputeBufferType.Append);
         m_currentNumParticles = particleArray.Length;
 
+        m_triangleBuffer = new ComputeBuffer(MAX_PARTICLES * 16, SIZE_TRIANGLE, ComputeBufferType.Append);
         m_triangleArgBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
         m_particleArgBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.IndirectArguments);
     }
@@ -437,13 +437,12 @@ public class GSimGPU
         m_computeShader.Dispatch(m_kernelIDs["Bulge"], mWarpCount, 1, 1); // good
         m_computeShader.Dispatch(m_kernelIDs["Spring"], mWarpCount, 1, 1); // maybe
         m_computeShader.Dispatch(m_kernelIDs["Plane"], mWarpCount, 1, 1);
-
         m_computeShader.Dispatch(m_kernelIDs["Split"], mWarpCount, 1, 1);
+        m_computeShader.Dispatch(m_kernelIDs["Integrate"], mWarpCount, 1, 1); //good
 
 
         Debug.Log("Particle count:" + m_currentNumParticles);
-        m_computeShader.Dispatch(m_kernelIDs["Integrate"], mWarpCount, 1, 1); //good
-
+        /*
         lastgpuData = (GParticleGPU[])(thisgpuData.Clone());
         m_particleCounts.Add(m_currentNumParticles);
 
@@ -452,7 +451,7 @@ public class GSimGPU
 
         CheckGraphConsistency();
         CheckCorruption();
-
+   */
     }
 
     private void CheckCorruption()
@@ -535,23 +534,23 @@ public class GSimGPU
             InitShadersAndBuffers();
         }
       
-              SetParameters();
-              RunSim();
-              CreateMesh();
-   
+        SetParameters();
+        RunSim();
+        CreateMesh();
+    
         m_frameNum++;
 
 
-        /*    GParticleGPU[] gpuData = new GParticleGPU[MAX_PARTICLES];
+    GParticleGPU[] gpuData = new GParticleGPU[MAX_PARTICLES];
 
           m_computeShader.Dispatch(m_kernelIDs["RotateTest"], 1, 1, 1);
           m_currentNumParticles = GetParticleCount();
 
           m_particleBuffer.GetData(gpuData);
 
-          Debug.Log(PrintLinks(gpuData[0]));
+ 
           m_computeShader.SetInt("_frameNum", m_frameNum);
-            */
+     
     }
 
     public void Draw(Material mat, Transform transform)

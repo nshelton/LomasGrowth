@@ -200,13 +200,26 @@ void GenerateMesh(uint3 id : SV_DispatchThreadID)
         return;
 
     Particle p = ParticleRWBuffer[id.x];
-   // OrderLinks(id.x);
+
+    int originalOrderedLinks[MAX_LINKS];
+    int numLinksOriginal = p.numLinks;
+    originalOrderedLinks[0] = p.links[0];
+    originalOrderedLinks[1] = GetNext(id.x, p.links[0]);
+
+    for (int k = 2; k < p.numLinks; k++)
+    {
+        originalOrderedLinks[k] = GetNext(
+            id.x,
+            originalOrderedLinks[k - 2],
+            originalOrderedLinks[k - 1]);
+    }
+
 
     for (int i = 0; i < p.numLinks; i++)
     { 
         
-        Particle p1 = ParticleRWBuffer[p.links[i]];
-        Particle p2 = ParticleRWBuffer[p.links[(i + 1) % (float) p.numLinks]];
+        Particle p1 = ParticleRWBuffer[originalOrderedLinks[i]];
+        Particle p2 = ParticleRWBuffer[originalOrderedLinks[(i + 1) % (float) p.numLinks]];
 
         Triangle t;
 
@@ -251,45 +264,59 @@ bool isConnected(int i, int j)
 [numthreads(BLOCKSIZE, 1, 1)]
 void Collision(uint id : SV_DispatchThreadID)
 {
-    Particle p = ParticleRWBuffer[id.x];
-
-    float r2 = max(0.001f, _radius * _radius);
-    for (int i = 0; i < _numParticles; i ++)
+    if (id.x < _numParticles)
     {
-        if (i != id.x && !isConnected(i, id.x))
+        Particle p = ParticleRWBuffer[id.x];
+
+        float r2 = max(0.001f, _radius * _radius);
+        for (int i = 0; i < _numParticles; i++)
         {
-            float3 displacement = (p.position - ParticleRWBuffer[i].position);
-            float d2 = dot(displacement, displacement);
-
-            if (length(displacement) < _radius)
+            if (i != id.x && !isConnected(i, id.x))
             {
-                displacement = normalize(displacement);
-                displacement *= (r2 - d2) / r2;
+                float3 displacement = (p.position - ParticleRWBuffer[i].position);
+                float d2 = dot(displacement, displacement);
 
-                p.delta += displacement * _collisionFactor;
+                if (length(displacement) < _radius)
+                {
+                    displacement = normalize(displacement);
+                    displacement *= (r2 - d2) / r2;
+
+                    p.delta += displacement * _collisionFactor;
+                }
             }
         }
-    }
 
-    ParticleRWBuffer[id.x] = p;
+        ParticleRWBuffer[id.x] = p;
+    }
 }
 
 void CalculateNormal(int index)
 {
     float3 tmpNormal = (float3) 0.0;
     Particle p = ParticleRWBuffer[index];
+    
+    int originalOrderedLinks[MAX_LINKS];
+    int numLinksOriginal = p.numLinks;
+    originalOrderedLinks[0] = p.links[0];
+    originalOrderedLinks[1] = GetNext(index, p.links[0]);
 
-    OrderLinks(index);
+    for (int k = 2; k < p.numLinks; k++)
+    {
+        originalOrderedLinks[k] = GetNext(
+            index,
+            originalOrderedLinks[k - 2],
+            originalOrderedLinks[k - 1]);
+    }
     
     for (uint i = 0; i < p.numLinks; i++)
     {
-        float3 c = ParticleRWBuffer[p.links[i]].position;
-        float3 d = ParticleRWBuffer[p.links[(i + 1) % p.numLinks]].position;
+        float3 c = ParticleRWBuffer[originalOrderedLinks[i]].position;
+        float3 d = ParticleRWBuffer[originalOrderedLinks[(i + 1) % p.numLinks]].position;
 
         if (-1 == orientation(
         p.position,
-        ParticleRWBuffer[p.links[0]].position,
-        ParticleRWBuffer[p.links[1]].position))
+        ParticleRWBuffer[originalOrderedLinks[0]].position,
+        ParticleRWBuffer[originalOrderedLinks[1]].position))
         {
             ParticleRWBuffer[index].normal = -ParticleRWBuffer[index].normal;
         }
@@ -303,89 +330,103 @@ void CalculateNormal(int index)
 [numthreads(BLOCKSIZE, 1, 1)]
 void Normal(uint id : SV_DispatchThreadID)
 {
-    CalculateNormal(id.x);
+    if (id.x < _numParticles)
+    {
+        CalculateNormal(id.x);
+    }
 }
 
 [numthreads(BLOCKSIZE, 1, 1)]
 void Bulge(uint id : SV_DispatchThreadID)
 {
-    Particle p = ParticleRWBuffer[id.x];
-
-    float bulgeDistance = 0;
-    float thetaL, thetaD, thetaC, radicand;
-    for (uint i = 0; i < p.numLinks; i++)
+    if (id.x < _numParticles)
     {
-        float3 d = ParticleRWBuffer[p.links[i]].position - p.position;
-        thetaL = acos(dot(d, p.normal) / length(d));
-        thetaD = asin(length(d) * sin(thetaL) / _springLength);
-        thetaC = 3.1415 - thetaD - thetaL;
+        Particle p = ParticleRWBuffer[id.x];
 
-        if (isnan(thetaC) || isinf(thetaC))
+        float bulgeDistance = 0;
+        float thetaL, thetaD, thetaC, radicand;
+        for (uint i = 0; i < p.numLinks; i++)
         {
-            continue;
-        }
+            float3 d = ParticleRWBuffer[p.links[i]].position - p.position;
+            thetaL = acos(dot(d, p.normal) / length(d));
+            thetaD = asin(length(d) * sin(thetaL) / _springLength);
+            thetaC = 3.1415 - thetaD - thetaL;
 
-        float radicand = pow(_springLength, 2) + length(d) * length(d) -
+            if (isnan(thetaC) || isinf(thetaC))
+            {
+                continue;
+            }
+
+            float radicand = pow(_springLength, 2) + length(d) * length(d) -
                         2.0 * length(d) * _springLength * cos(thetaC);
 
-        if (radicand < 0.0)
-        {
-            radicand = 0;
+            if (radicand < 0.0)
+            {
+                radicand = 0;
+            }
+
+            bulgeDistance += sqrt(radicand);
         }
 
-        bulgeDistance += sqrt(radicand);
+        bulgeDistance /= p.numLinks;
+
+        p.delta += p.normal * bulgeDistance * 0.1;
+
+        ParticleRWBuffer[id.x] = p;
     }
-
-    bulgeDistance /= p.numLinks;
-
-    p.delta += p.normal * bulgeDistance * 0.1;
-
-    ParticleRWBuffer[id.x] = p;
+    
 }
 
 [numthreads(BLOCKSIZE, 1, 1)]
 void Plane(uint id : SV_DispatchThreadID)
 {
-    Particle p = ParticleRWBuffer[id.x];
-    float3 planarTarget = (float3) 0.0;
-
-    for (uint i = 0; i < p.numLinks; ++i)
+    if (id.x < _numParticles)
     {
-        planarTarget += ParticleRWBuffer[p.links[i]].position;
-    }
-    planarTarget /= p.numLinks;
-    planarTarget = planarTarget - p.position;
+        Particle p = ParticleRWBuffer[id.x];
+        float3 planarTarget = (float3) 0.0;
 
-    p.curvature = -1.0 * length(planarTarget) *
+        for (uint i = 0; i < p.numLinks; ++i)
+        {
+            planarTarget += ParticleRWBuffer[p.links[i]].position;
+        }
+        planarTarget /= p.numLinks;
+        planarTarget = planarTarget - p.position;
+
+        p.curvature = -1.0 * length(planarTarget) *
                           dot(p.normal, normalize(planarTarget));
 
-    p.delta += planarTarget * _planarFactor;
+        p.delta += planarTarget * _planarFactor;
 
-    p.food += pow(max(p.curvature / 20.0f, 0.00001f),
+        p.food += pow(max(p.curvature / 20.0f, 0.00001f),
                             _foodExponent);
 
-    ParticleRWBuffer[id.x] = p;
+        ParticleRWBuffer[id.x] = p;
+    }
+
 }
 
 [numthreads(BLOCKSIZE, 1, 1)]
 void Spring(uint id : SV_DispatchThreadID)
 {
-    Particle p = ParticleRWBuffer[id.x];
-
-    float3 target = (float3) 0.0;
-    for (uint i = 0; i < p.numLinks;  i ++)
+    if (id.x < _numParticles)
     {
-        float3 d = ParticleRWBuffer[p.links[i]].position - p.position;
-        d = normalize(d);
-        d *= _springLength;
-        target += d;
+        Particle p = ParticleRWBuffer[id.x];
+
+        float3 target = (float3) 0.0;
+        for (uint i = 0; i < p.numLinks; i++)
+        {
+            float3 d = ParticleRWBuffer[p.links[i]].position - p.position;
+            d = normalize(d);
+            d *= _springLength;
+            target += d;
+        }
+
+        target /= p.numLinks;
+        target *= _springLength;
+        p.delta += target * _springFactor;
+
+        ParticleRWBuffer[id.x] = p;
     }
-
-    target /= p.numLinks;
-    target *= _springLength;
-    p.delta += target * _springFactor;
-
-    ParticleRWBuffer[id.x] = p;
 }
 
 void Rotate(int p_index, int places)
@@ -481,6 +522,7 @@ void RemoveLink(int index, int toRemove)
         }
     }
 }
+
 void ReplaceLink(int target, int old_index, int new_index)
 {
     Particle p = ParticleRWBuffer[target];
@@ -496,7 +538,6 @@ void ReplaceLink(int target, int old_index, int new_index)
 
 void SetLinksNew(int p_index, int b_index)
 {
-
     // get Neighbor with Lowest degree
     int lowestDegree = 99999;
     int neighborWithLowestDegree = -1;
@@ -532,30 +573,52 @@ void SetLinksNew(int p_index, int b_index)
     AddLink(b_index, p_index);
 }
 
+int FindLeastNeighbor(Particle p)
+{
+    int maxNeighbors = 99999;
+    int maxIndex = -1;
+
+    for (int i = 0; i < p.numLinks; i++)
+    {
+        if (ParticleRWBuffer[p.links[i]].numLinks < maxNeighbors)
+        {
+            maxNeighbors = ParticleRWBuffer[p.links[i]].numLinks;
+            maxIndex = p.links[i];
+        }
+    }
+
+    return maxIndex;
+
+}
+
 void SetLinks (int p_index, int b_index)
 {
-    OrderLinks(p_index);
+    //int firstIndex = FindLongestAxis(ParticleRWBuffer[p_index]);
 
-    int firstIndex = FindLongestAxis(ParticleRWBuffer[p_index]);
+    int firstIndex = FindLeastNeighbor(ParticleRWBuffer[p_index]);
 
-    Rotate(p_index, firstIndex);
-    int originalLinks[MAX_LINKS];
+    int originalOrderedLinks[MAX_LINKS];
     int numLinksOriginal = ParticleRWBuffer[p_index].numLinks;
+    originalOrderedLinks[0] = firstIndex;
+    originalOrderedLinks[1] = GetNext(p_index, firstIndex, firstIndex);
 
-    for (int k = 0; k < ParticleRWBuffer[p_index].numLinks; k++)
+    for (int k = 2; k < ParticleRWBuffer[p_index].numLinks; k++)
     {
-        originalLinks[k] = ParticleRWBuffer[p_index].links[k];
+        originalOrderedLinks[k] = GetNext(
+            p_index,
+            originalOrderedLinks[k - 2],
+            originalOrderedLinks[k - 1]);
     }
 
     for (int i = 0; i <= numLinksOriginal / 2; i++)
     {
-        AddLink(b_index, originalLinks[i]);
-        AddLink(originalLinks[i], b_index);
+        AddLink(b_index, originalOrderedLinks[i]);
+        AddLink(originalOrderedLinks[i], b_index);
 
         if (i != 0 && i != numLinksOriginal / 2)
         {
-            RemoveLink(p_index, originalLinks[i]);
-            RemoveLink(originalLinks[i], p_index);
+            RemoveLink(p_index, originalOrderedLinks[i]);
+            RemoveLink(originalOrderedLinks[i], p_index);
         }
     }
 
@@ -601,7 +664,6 @@ void DoSplit(int p_index)
         baby.links[j] = -2;
     }
 
-
     baby.age = 0;
     baby.food = 0;
     baby.curvature = 0;
@@ -613,14 +675,10 @@ void DoSplit(int p_index)
 
     int baby_index = _numParticles;
     ParticleRWBuffer[p_index].food = 0;
-
+    
     SetLinks(p_index, baby_index);
     SetPositions(p_index, baby_index);
 
-    CalculateNormal(p_index);
-    CalculateNormal(baby_index);
-
-    
     ParticleRWBuffer.IncrementCounter();
 }
 
@@ -629,13 +687,8 @@ void Split(uint id : SV_DispatchThreadID)
 {
     if (id.x < _numParticles)
     {
-        if (ParticleRWBuffer[id.x].food > _threshold &&
+        if ((ParticleRWBuffer[id.x].food > _threshold || ParticleRWBuffer[id.x].numLinks > 12) &&
              _frameNum % _numParticles == id.x)
-   
-     //   if (_frameNum % 60 == 0 &&
-  //        _frameNum / 60 == id.x)
-            
-    //  if (_frameNum ==30  && 5 == id.x)
         {
             DoSplit(id.x);
         }
@@ -645,10 +698,13 @@ void Split(uint id : SV_DispatchThreadID)
 [numthreads(BLOCKSIZE, 1, 1)]
 void Integrate(uint id : SV_DispatchThreadID)
 {
-    Particle p = ParticleRWBuffer[id.x];
-    p.position += p.delta * _dampening;
-    p.delta = (float3) 0.0;
-    ParticleRWBuffer[id.x] = p;
+    if (id.x < _numParticles)
+    {
+        Particle p = ParticleRWBuffer[id.x];
+        p.position += p.delta * _dampening;
+        p.delta = (float3) 0.0;
+        ParticleRWBuffer[id.x] = p;
+    }
 }
 
 
