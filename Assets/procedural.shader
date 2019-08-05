@@ -3,6 +3,8 @@
 	SubShader
 	{
 		Cull Off
+//		 Blend One One
+	  //ztest Off
 
 		Pass
 		{
@@ -17,6 +19,8 @@
 			{
 				float3 vPosition;
 				float3 vNormal;
+				float food;
+				float curvature;
 			};
 
 			struct Triangle
@@ -46,6 +50,8 @@
 				o.vertex = UnityObjectToClipPos(mul(model, float4(triangles[pid].v[vid].vPosition, 1)));
 				o.normal = mul(unity_ObjectToWorld, triangles[pid].v[vid].vNormal);
 				o.color = float3(vid == 0 ? 0 : 1,vid == 1 ? 0 : 1, vid == 2 ? 0 : 1 );
+
+				o.normal.x = triangles[pid].v[vid].food;
 				 UNITY_TRANSFER_FOG(o,o.vertex);
 				return o;
 			}
@@ -61,7 +67,8 @@
 			
 				float dist = max(max(i.color.x, i.color.y), i.color.z);
 
-				c.g = smoothstep(0.9, 1, dist);
+				c.g = smoothstep(0.9, 1, dist); 
+				c.b = 0.01 * i.normal.x * c.g;
 
 				UNITY_APPLY_FOG(i.fogCoord, c);
 

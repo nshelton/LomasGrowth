@@ -45,14 +45,12 @@ public class GSimGPU
         "Spring",
         "Split",
         "Integrate",
-        "RotateTest",
     };
 
     private const int SIZE_PARTICLE = 18 * sizeof(int) + 11 * sizeof(float);
-    private const int SIZE_TRIANGLE = 18 * sizeof(float);
-    private const int WARP_SIZE = 64;
+    private const int SIZE_TRIANGLE = 8 * 3 * sizeof(float);
+    private const int WARP_SIZE = 256;
     private const int MAX_PARTICLES = 1024 * 10 ;
-        
 
     public ComputeShader m_computeShader;
 
@@ -66,6 +64,11 @@ public class GSimGPU
     public GParticleGPU[] particleArray;
 
     public growthGPU parameters;
+
+    public int NumParticles
+    {
+        get { return m_currentNumParticles; }
+    }
 
     #region private variables
 
@@ -102,14 +105,6 @@ public class GSimGPU
         p.link05 = -1;
         p.link06 = -1;
         p.link07 = -1;
-        p.link08 = -1;
-        p.link09 = -1;
-        p.link10 = -1;
-        p.link11 = -1;
-        p.link12 = -1;
-        p.link13 = -1;
-        p.link14 = -1;
-        p.link15 = -1;
     }
 
     public void SetLinks(ref GParticleGPU p, List<int> list)
@@ -150,22 +145,15 @@ public class GSimGPU
 
     public bool ContainsLink(GParticleGPU cell, int target)
     {
-        return  cell.link00 == target ||
+        return cell.link00 == target ||
                 cell.link01 == target ||
                 cell.link02 == target ||
                 cell.link03 == target ||
                 cell.link04 == target ||
                 cell.link05 == target ||
                 cell.link06 == target ||
-                cell.link07 == target ||
-                cell.link08 == target ||
-                cell.link09 == target ||
-                cell.link10 == target ||
-                cell.link11 == target ||
-                cell.link12 == target ||
-                cell.link13 == target ||
-                cell.link14 == target ||
-                cell.link15 == target;
+                cell.link07 == target;
+
     }
 
     public void AddLink(ref GParticleGPU cell, int target)
@@ -245,39 +233,7 @@ public class GSimGPU
         {
             result += ", " + cell.link07;
         }
-        if (cell.numLinks > 8)
-        {
-            result += ", " + cell.link08;
-        }
-        if (cell.numLinks > 9)
-        {
-            result += ", " + cell.link09;
-        }
-        if (cell.numLinks >10)
-        {
-            result += ", " + cell.link10;
-        }
-        if (cell.numLinks > 11)
-        {
-            result += ", " + cell.link11;
-        }
-        if (cell.numLinks > 12)
-        {
-            result += ", " + cell.link12;
-        }
-        if (cell.numLinks > 13)
-        {
-            result += ", " + cell.link13;
-        }
-        if (cell.numLinks > 14)
-        {
-            result += ", " + cell.link14;
-        }
-        if (cell.numLinks > 15)
-        {
-            result += ", " + cell.link15;
-        }
-
+      
         return result;
     }
 
@@ -293,14 +249,6 @@ public class GSimGPU
             case 5: return cell.link05;
             case 6: return cell.link06;
             case 7: return cell.link07;
-            case 8: return cell.link08;
-            case 9: return cell.link09;
-            case 10: return cell.link10;
-            case 11: return cell.link11;
-            case 12: return cell.link12;
-            case 13: return cell.link13;
-            case 14: return cell.link14;
-            case 15: return cell.link15;
             default:
                 return -99;
         }
@@ -440,8 +388,8 @@ public class GSimGPU
         m_computeShader.Dispatch(m_kernelIDs["Split"], mWarpCount, 1, 1);
         m_computeShader.Dispatch(m_kernelIDs["Integrate"], mWarpCount, 1, 1); //good
 
-
         Debug.Log("Particle count:" + m_currentNumParticles);
+      
         /*
         lastgpuData = (GParticleGPU[])(thisgpuData.Clone());
         m_particleCounts.Add(m_currentNumParticles);
@@ -451,7 +399,7 @@ public class GSimGPU
 
         CheckGraphConsistency();
         CheckCorruption();
-   */
+        */
     }
 
     private void CheckCorruption()
@@ -534,32 +482,31 @@ public class GSimGPU
             InitShadersAndBuffers();
         }
       
-        SetParameters();
-        RunSim();
-        CreateMesh();
-    
-        m_frameNum++;
+        for(int i = 0; i < 20; i++)
+        {
+            SetParameters();
+            RunSim();
 
+            m_frameNum++;
+            m_currentNumParticles = GetParticleCount();
 
-    GParticleGPU[] gpuData = new GParticleGPU[MAX_PARTICLES];
+            m_computeShader.SetInt("_frameNum", m_frameNum);
+        }
 
-          m_computeShader.Dispatch(m_kernelIDs["RotateTest"], 1, 1, 1);
-          m_currentNumParticles = GetParticleCount();
-
-          m_particleBuffer.GetData(gpuData);
-
- 
-          m_computeShader.SetInt("_frameNum", m_frameNum);
-     
+      //  CreateMesh();
     }
 
     public void Draw(Material mat, Transform transform)
     {
+
+        /*
         mat.SetPass(0);
         mat.SetBuffer("triangles", m_triangleBuffer);
         mat.SetMatrix("model", transform.localToWorldMatrix);
         
         Graphics.DrawProceduralIndirect(MeshTopology.Triangles, m_triangleArgBuffer);
+    */
+
     }
 
     public void Release()

@@ -11,7 +11,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 }
 */
 
-#define BLOCKSIZE 64
+#define BLOCKSIZE 256
 #define MAX_LINKS 16
 
 #pragma kernel GenerateMesh
@@ -22,8 +22,6 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 #pragma kernel Spring
 #pragma kernel Split
 #pragma kernel Integrate
-#pragma kernel RotateTest
-
 
 // uniforms 
 float _maxNeighbors;
@@ -55,6 +53,8 @@ struct Vertex
 {
     float3 vPosition;
     float3 vNormal;
+    float food;
+    float curvature;
 };
 
 struct Triangle
@@ -171,9 +171,6 @@ void OrderLinks2(int p)
 
 void OrderLinks(int p)
 {
-  // OrderLinks2(p);
-  //  return;
-
     if (ParticleRWBuffer[p].numLinks < 3)
         return;
     
@@ -245,6 +242,14 @@ void GenerateMesh(uint3 id : SV_DispatchThreadID)
         t.v[1] = v1;
         t.v[2] = v2;
 
+        t.v[0].food = p.food;
+        t.v[1].food = p1.food;
+        t.v[2].food = p2.food;
+
+        t.v[0].curvature = p.curvature;
+        t.v[1].curvature = p1.curvature;
+        t.v[2].curvature = p2.curvature;
+
         TriangleAppendBufffer.Append(t);
     }
 }
@@ -261,14 +266,17 @@ bool isConnected(int i, int j)
     return false;
 }
 
+groupshared Particle sharedParticles[BLOCKSIZE];
+
+
 [numthreads(BLOCKSIZE, 1, 1)]
 void Collision(uint id : SV_DispatchThreadID)
 {
     if (id.x < _numParticles)
     {
         Particle p = ParticleRWBuffer[id.x];
-
         float r2 = max(0.001f, _radius * _radius);
+
         for (int i = 0; i < _numParticles; i++)
         {
             if (i != id.x && !isConnected(i, id.x))
@@ -314,9 +322,9 @@ void CalculateNormal(int index)
         float3 d = ParticleRWBuffer[originalOrderedLinks[(i + 1) % p.numLinks]].position;
 
         if (-1 == orientation(
-        p.position,
-        ParticleRWBuffer[originalOrderedLinks[0]].position,
-        ParticleRWBuffer[originalOrderedLinks[1]].position))
+            p.position,
+            ParticleRWBuffer[originalOrderedLinks[0]].position,
+            ParticleRWBuffer[originalOrderedLinks[1]].position))
         {
             ParticleRWBuffer[index].normal = -ParticleRWBuffer[index].normal;
         }
@@ -344,37 +352,24 @@ void Bulge(uint id : SV_DispatchThreadID)
         Particle p = ParticleRWBuffer[id.x];
 
         float bulgeDistance = 0;
-        float thetaL, thetaD, thetaC, radicand;
+        float sprLength2 = _springLength * _springLength;
+
         for (uint i = 0; i < p.numLinks; i++)
         {
-            float3 d = ParticleRWBuffer[p.links[i]].position - p.position;
-            thetaL = acos(dot(d, p.normal) / length(d));
-            thetaD = asin(length(d) * sin(thetaL) / _springLength);
-            thetaC = 3.1415 - thetaD - thetaL;
+            float3 pos_i = ParticleRWBuffer[p.links[i]].position;
+            float dist = length(pos_i - p.position);
 
-            if (isnan(thetaC) || isinf(thetaC))
+            if (dist < _springLength)
             {
-                continue;
+                bulgeDistance += (_springLength - dist);
             }
-
-            float radicand = pow(_springLength, 2) + length(d) * length(d) -
-                        2.0 * length(d) * _springLength * cos(thetaC);
-
-            if (radicand < 0.0)
-            {
-                radicand = 0;
-            }
-
-            bulgeDistance += sqrt(radicand);
         }
 
         bulgeDistance /= p.numLinks;
-
-        p.delta += p.normal * bulgeDistance * 0.1;
-
+            
+        p.delta += -p.normal * bulgeDistance * _bulgeFactor;
         ParticleRWBuffer[id.x] = p;
     }
-    
 }
 
 [numthreads(BLOCKSIZE, 1, 1)]
@@ -389,6 +384,7 @@ void Plane(uint id : SV_DispatchThreadID)
         {
             planarTarget += ParticleRWBuffer[p.links[i]].position;
         }
+
         planarTarget /= p.numLinks;
         planarTarget = planarTarget - p.position;
 
@@ -397,12 +393,10 @@ void Plane(uint id : SV_DispatchThreadID)
 
         p.delta += planarTarget * _planarFactor;
 
-        p.food += pow(max(p.curvature / 20.0f, 0.00001f),
-                            _foodExponent);
+        p.food += pow(max(p.curvature / 20.0 , 0.00001f),  _foodExponent);
 
         ParticleRWBuffer[id.x] = p;
     }
-
 }
 
 [numthreads(BLOCKSIZE, 1, 1)]
@@ -415,40 +409,15 @@ void Spring(uint id : SV_DispatchThreadID)
         float3 target = (float3) 0.0;
         for (uint i = 0; i < p.numLinks; i++)
         {
-            float3 d = ParticleRWBuffer[p.links[i]].position - p.position;
-            d = normalize(d);
-            d *= _springLength;
+            Particle q = ParticleRWBuffer[p.links[i]];
+            float3 d = q.position + _springLength * normalize(p.position - q.position);
             target += d;
         }
 
         target /= p.numLinks;
-        target *= _springLength;
-        p.delta += target * _springFactor;
+        target -= p.position;
 
-        ParticleRWBuffer[id.x] = p;
-    }
-}
-
-void Rotate(int p_index, int places)
-{
-    Particle p = ParticleRWBuffer[p_index];
-    
-    int scratch[MAX_LINKS];
-
-    int target_index = 0;
-    for (uint i = places; i < p.numLinks; i++)
-    {
-        scratch[target_index++] = p.links[i];
-    }
-
-    for (uint j = 0; j < places; j++)
-    {
-        scratch[target_index++] = p.links[j];
-    }
-
-    for (uint k = 0; k < p.numLinks; k++)
-    {
-        ParticleRWBuffer[p_index].links[k] = scratch[k];
+        ParticleRWBuffer[id.x].delta += target * _springFactor;
     }
 }
 
@@ -687,12 +656,13 @@ void Split(uint id : SV_DispatchThreadID)
 {
     if (id.x < _numParticles)
     {
-        if ((ParticleRWBuffer[id.x].food > _threshold || ParticleRWBuffer[id.x].numLinks > 12) &&
+        if ((ParticleRWBuffer[id.x].food > _threshold || ParticleRWBuffer[id.x].numLinks > 8) &&
              _frameNum % _numParticles == id.x)
         {
             DoSplit(id.x);
         }
     }
+
 }
 
 [numthreads(BLOCKSIZE, 1, 1)]
@@ -707,9 +677,3 @@ void Integrate(uint id : SV_DispatchThreadID)
     }
 }
 
-
-[numthreads(BLOCKSIZE, 1, 1)]
-void RotateTest(uint id : SV_DispatchThreadID)
-{
-    Rotate(id.x, 2);
-}

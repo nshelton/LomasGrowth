@@ -17,7 +17,7 @@ RenderSettings:
   m_Fog: 1
   m_FogColor: {r: 0, g: 0, b: 0, a: 1}
   m_FogMode: 3
-  m_FogDensity: 0.03
+  m_FogDensity: 0.01
   m_LinearFogStart: 0
   m_LinearFogEnd: 300
   m_AmbientSkyColor: {r: 0.212, g: 0.227, b: 0.259, a: 1}
@@ -258,7 +258,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 534669902}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1, z: -10}
+  m_LocalPosition: {x: 0, y: 1, z: -30}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
@@ -357,15 +357,17 @@ MonoBehaviour:
   maxNeighbors: 12
   radius: 6.99
   collisionFactor: 0.548
-  bulgeFactor: 0.1
+  bulgeFactor: 0
   springFactor: 0.093
   springLength: 0.9
   planarFactor: 0.631
   dampening: 0.097
-  foodExponent: 0.57
-  threshold: 67.6
+  foodExponent: 1.41
+  threshold: 102
   triangleMat: {fileID: 2100000, guid: 02c4d88a917636d4ca6440f395db875b, type: 2}
   m_computeShader: {fileID: 7200000, guid: 44f10af7ae9d98143a1b8cc27c02f6bb, type: 3}
+  m_renderMesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
+  instanceMaterial: {fileID: 2100000, guid: 72928ab462a7ed043a7c2550826862db, type: 2}
   m_mesh: {fileID: 4300000, guid: 3ee2cac3cfd25884d8c0a321563f64ed, type: 3}
 --- !u!4 &1344433780
 Transform:
@@ -388,7 +390,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1344433778}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1dbf5fb068517d64eab4de4bc33ffd63, type: 3}
   m_Name: 

@@ -30,32 +30,72 @@ public class growthGPU : MonoBehaviour
     private Material triangleMat;
     [SerializeField]
     private ComputeShader m_computeShader;
+    [SerializeField]
+    private Mesh m_renderMesh;
+    [SerializeField]
+    private Material instanceMaterial;
 
     private GSimGPU sim = new GSimGPU();
 
     [SerializeField]
     public Mesh m_mesh;
 
+
+    private ComputeBuffer argsBuffer;
+    private uint[] args = new uint[5] { 0, 0, 0, 0, 0 };
+    private Bounds bigBounds = new Bounds(Vector3.zero, Vector3.one * 1e5f);
+
     private void OnEnable()
     {
         sim.m_computeShader = m_computeShader;
         sim.Init(m_mesh);
         sim.parameters = this;
+        argsBuffer = new ComputeBuffer(1, args.Length * sizeof(uint), ComputeBufferType.IndirectArguments);
     }
 
     private void Update()
     {
         sim.Tick();
+        Render();
     }
 
-    private void OnRenderObject()
+
+    private void Render()
     {
-        sim.Draw(triangleMat, transform);
+
+        uint instanceCount = (uint)sim.NumParticles;
+
+        Debug.Log(instanceCount);
+        args[0] = (uint)m_renderMesh.GetIndexCount(0);
+        args[1] = (uint)instanceCount;
+        args[2] = 0;
+        args[3] = 0;
+        args[4] = 0;
+
+        argsBuffer.SetData(args);
+
+        var matrices = new Matrix4x4[sim.NumParticles];
+
+        instanceMaterial.SetBuffer("particles", sim.m_particleBuffer);
+
+        Graphics.DrawMeshInstancedIndirect(
+            m_renderMesh,
+            0,
+            instanceMaterial,
+            bigBounds,
+            argsBuffer,
+            0, 
+            null, 
+            UnityEngine.Rendering.ShadowCastingMode.On, 
+            true);
+
+        //   sim.Draw(triangleMat, transform);
     }
 
     private void OnDestroy()
     {
         sim.Release();
+        argsBuffer.Release();
     }
 
     /*
